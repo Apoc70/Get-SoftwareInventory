@@ -1,89 +1,84 @@
 <# 
-    .SYNOPSIS 
-    Script to generate an html reports of installed software, installed updates and installed components on a remote computer
+  .SYNOPSIS 
+  Script to generate an html reports of installed software, installed updates and installed components on a remote computer
 
-    Thomas Stensitzki 
+  Thomas Stensitzki 
 
-    THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND. THE ENTIRE  
-    RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS WITH THE USER. 
+  THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND. THE ENTIRE  
+  RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS WITH THE USER. 
 
-    Version 1.0, 2016-06-03
+  Version 1.0, 2016-06-03
 
-    Please send ideas, comments and suggestions to support@granikos.eu 
+  Please send ideas, comments and suggestions to support@granikos.eu 
 
-    .LINK 
-    More information can be found at http://www.granikos.eu/en/scripts
+  .LINK 
+  http://www.granikos.eu/en/scripts
 
-    .DESCRIPTION 
-    This script utilizes the slightly modified function Get-RemoteProgram by Jaap Brasser to fetch information about installed software.
+  .DESCRIPTION 
+  This script utilizes the slightly modified function Get-RemoteProgram by Jaap Brasser to fetch information about installed software.
 
-    The script generates outputs for 
-    * Installed programs
-    * Installed updates
-    * Installed components
+  The script generates outputs for 
+  * Installed programs
+  * Installed updates
+  * Installed components
     
-    These three outputs are composed to a single html emails. All three outputs are 
-    exported to CSV files which are added to the generated email as attachments. The
-    html report is added as attachment as well.    
+  These three outputs are composed to a single html emails. All three outputs are 
+  exported to CSV files which are added to the generated email as attachments. The
+  html report is added as attachment as well.    
      
-    .NOTES 
-    Requirements 
-    - Windows Server 2012 R2  
-    - Remote Registry
+  .NOTES 
+  Requirements 
+  - Windows Server 2012 R2  
+  - Remote Registry
     
-    Revision History 
-    -------------------------------------------------------------------------------- 
-    1.0      Initial community release 
+  Revision History 
+  -------------------------------------------------------------------------------- 
+  1.0      Initial community release 
 
-    .CREDITS
-    Jaap Brasser
-    Georges Zwingelstein, https://gallery.technet.microsoft.com/scriptcenter/site/profile?userName=Georges%20Zwingelstein
+  .CREDITS
+  Jaap Brasser
+  Georges Zwingelstein, https://gallery.technet.microsoft.com/scriptcenter/site/profile?userName=Georges%20Zwingelstein
 
-    .PARAMETER RemoteComputer
-    Name of the computer to fetch data from (default: local computer)  
+  .PARAMETER RemoteComputer
+  Name of the computer to fetch data from (default: local computer)  
 
-    .PARAMETER SendMail
-    Switch to send an Html report
+  .PARAMETER SendMail
+  Switch to send an Html report
 
-    .PARAMETER MailFrom
-    Email address of report sender
+  .PARAMETER MailFrom
+  Email address of report sender
 
-    .PARAMETER MailTo
-    Email address of report recipient
+  .PARAMETER MailTo
+  Email address of report recipient
 
-    .PARAMETER MailServer
-    SMTP Server for email report
+  .PARAMETER MailServer
+  SMTP Server for email report
 
-    .EXAMPLE 
-    Get software information about SERVER01, SERVER02 and send email report
+  .EXAMPLE 
+  Get software information about SERVER01, SERVER02 and send email report
     
-    .\Get-SoftwareInventory.ps1 -SendMail -MailFrom postmaster@mcsmemail.de -MailTo it-support@mcsmemail.de -MailServer mymailserver.mcsmemail.de -RemoteComputer SERVER01,SERVER02
+  .\Get-SoftwareInventory.ps1 -SendMail -MailFrom postmaster@mcsmemail.de -MailTo it-support@mcsmemail.de -MailServer mymailserver.mcsmemail.de -RemoteComputer SERVER01,SERVER02
 
-    .EXAMPLE 
-    Get software information about SERVER01, SERVER02 and write report to disk only
+  .EXAMPLE 
+  Get software information about SERVER01, SERVER02 and write report to disk only
     
-    .\Get-SoftwareInventory.ps1 -RemoteComputer SERVER01,SERVER02
+  .\Get-SoftwareInventory.ps1 -RemoteComputer SERVER01,SERVER02
 #>
+[CmdletBinding()]
 param(
-    [Parameter(ValueFromPipeline=$true,
-            ValueFromPipelineByPropertyName=$true,
-            Position=0)]
-        [string[]]
-            $RemoteComputer = $env:COMPUTERNAME,
-    [parameter(Mandatory=$false, HelpMessage='Send report as Html email')]
-        [switch] $SendMail,
-    [parameter(Mandatory=$false, HelpMessage='Sender address for result summary')]
-        [string]$MailFrom = "",
-    [parameter(Mandatory=$false, HelpMessage='Recipient address for result summary')]
-        [string]$MailTo = "",
-    [parameter(Mandatory=$false, HelpMessage='SMTP Server address for sending result summary')]
-        [string]$MailServer = ""
+  [Parameter(ValueFromPipeline,ValueFromPipelineByPropertyName,Position=0)]
+  [string[]]
+  $RemoteComputer = $env:COMPUTERNAME,
+  [switch] $SendMail,
+  [string]$MailFrom = '',
+  [string]$MailTo = '',
+  [string]$MailServer = ''
 )
 
-$myDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir= Split-Path -Parent -Path $MyInvocation.MyCommand.Path
 
-$now = Get-Date -Format F
-$reportTitle = "Software Inventory Report"
+$now = Get-Date -Format 'yyyy-MM-dd HH:mm'
+$ReportTitle = 'Software Inventory Report'
 $count = 1
 
 <#
@@ -102,15 +97,18 @@ $count = 1
     https://gallery.technet.microsoft.com/scriptcenter/Get-RemoteProgram-Get-list-de9fd2b4 
 #>
 Function Get-RemoteProgram {
-    [CmdletBinding(SupportsShouldProcess=$true)]
+ [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(ValueFromPipeline=$true,
-            ValueFromPipelineByPropertyName=$true,
-            Position=0)]
+        [Parameter(ValueFromPipeline,ValueFromPipelineByPropertyName,Position=0)]
         [string[]]
             $ComputerName = $env:COMPUTERNAME,
         [Parameter(Position=0)]
-        [string[]]$Property 
+        [string[]]
+            $Property,
+        [switch]
+            $ExcludeSimilar,
+        [int]
+            $SimilarWord
     )
 
     begin {
@@ -125,17 +123,16 @@ Function Get-RemoteProgram {
 
     process {
         foreach ($Computer in $ComputerName) {
-            try
-            {
-                $RegBase = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$Computer)
-                foreach ($CurrentReg in $RegistryLocation) {
+            $RegBase = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$Computer)
+            $RegistryLocation | ForEach-Object {
+                $CurrentReg = $_
                 if ($RegBase) {
                     $CurrentRegKey = $RegBase.OpenSubKey($CurrentReg)
                     if ($CurrentRegKey) {
                         $CurrentRegKey.GetSubKeyNames() | ForEach-Object {
                             if ($Property) {
                                 foreach ($CurrentProperty in $Property) {
-                                    $HashProperty.$CurrentProperty = "$(($RegBase.OpenSubKey("$CurrentReg$_")).GetValue($CurrentProperty))"
+                                    $HashProperty.$CurrentProperty = ($RegBase.OpenSubKey("$CurrentReg$_")).GetValue($CurrentProperty)
                                 }
                             }
                             $HashProperty.ComputerName = $Computer
@@ -143,13 +140,36 @@ Function Get-RemoteProgram {
                             if ($DisplayName) {
                                 New-Object -TypeName PSCustomObject -Property $HashProperty |
                                 Select-Object -Property $SelectProperty
-                            }
+                            } 
                         }
                     }
                 }
+            } | ForEach-Object -Begin {
+                if ($SimilarWord) {
+                    $Regex = [regex]"(^(.+?\s){$SimilarWord}).*$|(.*)"
+                } else {
+                    $Regex = [regex]"(^(.+?\s){3}).*$|(.*)"
+                }
+                [System.Collections.ArrayList]$Array = @()
+            } -Process {
+                if ($ExcludeSimilar) {
+                    $null = $Array.Add($_)
+                } else {
+                    $_
+                }
+            } -End {
+                if ($ExcludeSimilar) {
+                    $Array | Select-Object -Property *,@{
+                        name       = 'GroupedName'
+                        expression = {
+                            ($_.ProgramName -split $Regex)[1]
+                        }
+                    } |
+                    Group-Object -Property 'GroupedName' | ForEach-Object {
+                        $_.Group[0] | Select-Object -Property * -ExcludeProperty GroupedName
+                    }
+                }
             }
-            }
-            catch {}
         }
     }
 }
@@ -157,12 +177,12 @@ Function Get-RemoteProgram {
 ### MAIN ######################################################
 # Query strig courtesy of Georges Zwingelstein https://gallery.technet.microsoft.com/scriptcenter/site/profile?userName=Georges%20Zwingelstein 
 
-# Some CSS to get a pretty report
+# Some CSS to create a pretty report
 $head = @"
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
-<html><head><title>$($reportTitle)</title>
-<style type=”text/css”>
-<!–
+<html><head><title>$($ReportTitle)</title>
+<style type="text/css">
+<!-
 body {
     font-family: Verdana, Geneva, Arial, Helvetica, sans-serif;
 }
@@ -213,61 +233,63 @@ table th {
 </style>
 "@
 
+foreach($Computer in $RemoteComputer) {
+    $Computer = $Computer.ToUpper()
 
-foreach($computer in $RemoteComputer) {
-    $computer = $computer.ToUpper()
+    Write-Progress -Activity 'Fetching software inventory' -Status ('Working on server {0} [{1}/{2}]' -f $computer, $count, $RemoteComputer.Count) -PercentComplete (($count/$RemoteComputer.Count)*100)
 
-    Write-Progress -Activity 'Fetching software inventory' -Status "Working on server $($computer) [$($count)/$($RemoteComputer.Count)]" -PercentComplete (($count/$RemoteComputer.Count)*100)
-
-    $htmlreport = @()
-    $attachments = @()
-    $reportTitle = "Software Inventory Report [$($computer)] - $($now)"
-    $csvFile = 
+    $HtmlReport = @()
+    $Attachments = @()
+    $ReportTitle = ('Software Inventory Report [{0}] - {1}' -f $computer.ToUpper(), $now)
+    # $csvFile = ''
 
     # Fetch installed programs
-    $InstalledPrograms = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -ne 1 -and ![string]$_.IsMinorUpgrade -and ![string]$_.ReleaseType -and ![string]$_.ParentDisplayName} | Sort-Object ProgramName 
+    $InstalledPrograms = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -ne 1 -and ![string]$_.IsMinorUpgrade -and ![string]$_.ReleaseType -and ![string]$_.ParentDisplayName} | Sort-Object -Property ProgramName 
+
     if( $InstalledPrograms -ne $null) {
-        $csvInstalledPrograms = "$myDir\InstalledPrograms-$($computer).csv"
+        $csvInstalledPrograms = ('{0}\InstalledPrograms-{1}.csv' -f $ScriptDir, $computer.ToUpper())
         $InstalledPrograms | Export-Csv -Path $csvInstalledPrograms -Force -Encoding UTF8 -NoTypeInformation -Delimiter ';'
-        $htmlReport += $InstalledPrograms | ConvertTo-Html -Fragment -PreContent "<h1>$($computer)</h1><h2>Installed Programs</h2>"
-        $attachments += $csvInstalledPrograms
+        $HtmlReport += $InstalledPrograms | ConvertTo-Html -Fragment -PreContent ('<h1>{0}</h1><h2>Installed Programs</h2>' -f $computer.ToUpper())
+        $Attachments += $csvInstalledPrograms
     }
     else {
-        $htmlReport += "<h1>$($computer)</h1><h2>Installed Programs</h2><p>Error fetching installed programs</p>"
+        $HtmlReport += ('<h1>{0}</h1><h2>Installed Programs</h2><p>Error fetching installed programs</p>' -f $computer.ToUpper())
     }
 
     # Fetch installed updates
-    $InstalledUpdates = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -ne 1 -and ([string]$_.IsMinorUpgrade -or [string]$_.ReleaseType -or [string]$_.ParentDisplayName)} | Sort-Object ParentDisplayName,ProgramName
+    $InstalledUpdates = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -ne 1 -and ([string]$_.IsMinorUpgrade -or [string]$_.ReleaseType -or [string]$_.ParentDisplayName)} | Sort-Object -Property ParentDisplayName,ProgramName
+
     if($InstalledUpdates -ne $null) {
-        $csvInstalledUpdates = "$myDir\InstalledUpdates-$($computer).csv"
+        $csvInstalledUpdates = ('{0}\InstalledUpdates-{1}.csv' -f $ScriptDir, $computer.ToUpper())
         $InstalledUpdates | Export-Csv -Path $csvInstalledUpdates -Force -Encoding UTF8 -NoTypeInformation -Delimiter ';'
-        $htmlReport += $InstalledUpdates | ConvertTo-Html -Fragment -PreContent '<h2>Installed Updates</h2>'
-        $attachments += $csvInstalledUpdates
+        $HtmlReport += $InstalledUpdates | ConvertTo-Html -Fragment -PreContent '<h2>Installed Updates</h2>'
+        $Attachments += $csvInstalledUpdates
     }
     else {
-        $htmlReport += "<h1>$($computer)</h1><h2>Installed Updates</h2><p>Error fetching installed updates</p>"
+        $HtmlReport += ('<h1>{0}</h1><h2>Installed Updates</h2><p>Error fetching installed updates</p>' -f $computer.ToUpper())
     }
 
     # Fetch installed components
-    $InstalledComponents = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -eq 1} | Sort-Object ProgramName
+    $InstalledComponents = Get-RemoteProgram -ComputerName $computer -Property Publisher,InstallDate,DisplayVersion,IsMinorUpgrade,ReleaseType,ParentDisplayName,SystemComponent | Where-Object {[string]$_.SystemComponent -eq 1} | Sort-Object -Property ProgramName
+
     if($InstalledComponents -ne $null) {
-        $csvInstalledComponents = "$myDir\InstalledComponents-$($computer).csv"
+        $csvInstalledComponents = ('{0}\InstalledComponents-{1}.csv' -f $ScriptDir, $computer.ToUpper())
         $InstalledComponents | Export-Csv -Path $csvInstalledComponents -Force -Encoding UTF8 -NoTypeInformation -Delimiter ';'
-        $htmlReport += $InstalledComponents | ConvertTo-Html -Fragment -PreContent '<h2>Installed Components</h2>'
-        $attachments += $csvInstalledComponents
+        $HtmlReport += $InstalledComponents | ConvertTo-Html -Fragment -PreContent '<h2>Installed Components</h2>'
+        $Attachments += $csvInstalledComponents
     }
     else {
-        $htmlReport += "<h1>$($computer)</h1><h2>Installed Components</h2><p>Error fetching installed components</p>"
+        $HtmlReport += ('<h1>{0}</h1><h2>Installed Components</h2><p>Error fetching installed components</p>' -f $computer.ToUpper())
     }
 
     # Generate full html report
-    [string]$htmlreport = ConvertTo-Html -Body $htmlreport -Head $head -Title $reportTitle 
-    $reportfile = "$myDir\SoftwareInventory-$($computer).html"
-    $htmlreport | Out-File -Encoding utf8 -FilePath $reportfile -Force
-    $attachments += $reportfile
+    [string]$HtmlReport = ConvertTo-Html -Body $HtmlReport -Head $head -Title $ReportTitle 
+    $reportfile = ('{0}\SoftwareInventory-{1}.html' -f $ScriptDir, $computer.ToUpper())
+    $HtmlReport | Out-File -Encoding utf8 -FilePath $reportfile -Force
+    $Attachments += $reportfile
 
     if($SendMail) {
-        Send-MailMessage -From $MailFrom -To $MailTo -SmtpServer $MailServer -Body $htmlreport -Subject $reportTitle -Attachments $attachments -BodyAsHtml
+        Send-MailMessage -From $MailFrom -To $MailTo -SmtpServer $MailServer -Body $HtmlReport -Subject $ReportTitle -Attachments $Attachments -BodyAsHtml
     }
     $count++
 }
